@@ -139,8 +139,8 @@ html, body {
   font-size: 15px;
   font-weight: 600;
 }
-/* App 界面内状态栏为深色背景时改白色 */
-.app-view .status-bar { color: #fff; }
+/* App 界面内状态栏：App 内容顶部为浅色，使用深色文字保证可读 */
+.app-view .status-bar { color: #000; }
 .status-bar .time { padding-top: 4px; }
 .status-right { display: flex; align-items: center; gap: 5px; padding-top: 4px; }
 .status-right .signal { font-size: 10px; letter-spacing: -1px; }
@@ -249,6 +249,16 @@ html, body {
   z-index: 50;
 }
 .lock-view .home-indicator { margin-top: 0; background: #1c1c1e; opacity: 0.4; }
+/* 扩大锁屏解锁热区，方便点击/触控 */
+.lock-view .home-indicator::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -12px;
+  transform: translateX(-50%);
+  width: 200px;
+  height: 60px;
+}
 .app-view .home-indicator { background: #000; opacity: 0.3; }
 
 /* ===== 密码界面 ===== */
@@ -501,6 +511,11 @@ html, body {
 .home-fab:active {
   transform: scale(0.9);
   background: rgba(0, 0, 0, 0.75);
+}
+/* 聊天详情/朋友圈编辑页已有返回或发送操作，隐藏悬浮按钮避免遮挡 */
+.app-view:has(.wx-chat-detail) .home-fab,
+.app-view:has(.moments-compose) .home-fab {
+  display: none;
 }
 .app-header {
   position: sticky;

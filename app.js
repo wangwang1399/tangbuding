@@ -27,6 +27,8 @@ let momentsCursorPos = 0;
 let autoTypeTimer = null;
 // 自动输入是否暂停（被聊天打断时）
 let autoTypePaused = false;
+// 朋友圈文案是否已补全（补全后才允许点击发送）
+let momentsDraftReady = false;
 // 聊天中触发切换回朋友圈的标记
 let chatTriggerFired = false;
 
@@ -55,9 +57,13 @@ function getWeekdayShort() {
   return ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'][d.getDay()];
 }
 
-// 判断头像是否为图片路径
+// 判断头像是否为图片（支持 assets 路径、外链和 base64 data URI）
 function isImageAvatar(avatar) {
-  return typeof avatar === 'string' && /\.(png|jpg|jpeg|gif|webp)$/i.test(avatar);
+  if (typeof avatar !== 'string') return false;
+  return avatar.startsWith('data:image/') ||
+    avatar.startsWith('assets/') ||
+    /^https?:\/\//i.test(avatar) ||
+    /\.(png|jpg|jpeg|gif|webp)$/i.test(avatar);
 }
 
 // 获取生真当前头像（触发糖糖照片消息后更换为新头像）
@@ -109,10 +115,26 @@ function showAvatarChangeModal(newSrc) {
 }
 
 // 阶段解锁顺序（用于判断内容是否已解锁）
-const STAGE_ORDER = ['initial', 'moments_phase1', 'chat_phase1', 'moments_phase2', 'moments_sent'];
+const STAGE_ORDER = [
+  'initial',
+  'moments_phase1',
+  'chat_phase1',
+  'moments_phase2',
+  'moments_sent',
+  'chat_phase2_done',
+  'chat_phase3_done',
+  'chat_phase4_done',
+  'chat_phase5_done',
+  'chat_phase6_done',
+  'chat_phase7_done',
+  'chat_phase8_done'
+];
 function isStageUnlocked(requiredStage) {
   if (!requiredStage || requiredStage === 'initial') return true;
-  return STAGE_ORDER.indexOf(gameStage) >= STAGE_ORDER.indexOf(requiredStage);
+  const requiredIdx = STAGE_ORDER.indexOf(requiredStage);
+  // 未定义的阶段视为未解锁，避免剧透
+  if (requiredIdx < 0) return false;
+  return STAGE_ORDER.indexOf(gameStage) >= requiredIdx;
 }
 
 // 默认微信头像（灰色人形剪影）
@@ -146,13 +168,12 @@ const IOS_ICONS = {
   camera: `<svg viewBox="0 0 120 120" width="100%" height="100%"><rect x="14" y="32" width="92" height="64" rx="10" fill="#333"/><rect x="40" y="22" width="40" height="16" rx="4" fill="#333"/><circle cx="60" cy="64" r="20" fill="#1a1a1a"/><circle cx="60" cy="64" r="14" fill="#2a2a2a"/><circle cx="55" cy="59" r="4" fill="#666"/><rect x="84" y="40" width="10" height="6" rx="2" fill="#ff3b30"/></svg>`,
 };
 
-// 获取 App 图标 HTML
+// 获取 App 图标 / 头像 HTML
 function getAppIconHTML(iconKey) {
-  // 如果是图片路径，返回 img 标签
-  if (typeof iconKey === 'string' && (iconKey.startsWith('assets/') || iconKey.match(/\.(jpg|jpeg|png|webp|gif)$/i))) {
+  // 图片路径、外链或 base64 内嵌图片
+  if (isImageAvatar(iconKey)) {
     return `<img src="${iconKey}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" onerror="this.style.display='none'"/>`;
   }
-  // 别名映射（已移除：拉齐亚头像现使用图片 assets/laqiya.jpg）
   if (IOS_ICONS[iconKey]) return IOS_ICONS[iconKey];
   // 兜底：返回 emoji
   return iconKey;
@@ -380,32 +401,9 @@ function checkPasscode() {
   }
 }
 
-/* ========== 微信消息通知系统（按时间顺序逐帧解锁） ========== */
+/* ========== 微信剧情消息系统 ========== */
 // 已解锁到的消息索引（-1 表示尚未解锁任何消息）
 let wechatUnlockedIndex = -1;
-// 通知队列：从生真的聊天中提取的"对方消息"，按时间顺序
-let wechatNotifQueue = [];
-// 当前正在显示的通知索引
-let wechatNotifCurrentIdx = 0;
-// 通知定时器
-let wechatNotifTimer = null;
-let wechatNotifStarted = false;
-
-// 构建通知队列：从生真的聊天记录中提取所有"对方消息"
-function buildWeChatNotifQueue() {
-  const chat = CHATS[OWNER.birthdayGirl];
-  if (!chat) return;
-  const queue = [];
-  chat.messages.forEach((msg, idx) => {
-    const [text, type, time] = msg;
-    if (type === 'them') {
-      queue.push({ text, time, msgIndex: idx });
-    }
-  });
-  wechatNotifQueue = queue;
-  wechatUnlockedIndex = -1;
-  wechatNotifCurrentIdx = 0;
-}
 
 // 判断当前是否处于聊天界面（微信聊天详情页）
 function isInChatView() {
@@ -419,12 +417,17 @@ function isInWeChatListView() {
 
 // 显示一条通知横幅
 function showNotifBanner(notif) {
-  // 核心规则：仅当不在聊天界面时才弹出通知
-  if (isInChatView() && !notif.forceShow) return;
+  // 剧情通知可以在任何界面弹出；普通通知仅在聊天外弹出
+  if (!notif.onClick && isInChatView() && !notif.forceShow) return;
 
   const container = $('#notifBannerContainer');
+  if (!container) return;
+  // 同一时间只保留一条剧情通知
+  if (notif.sticky) {
+    container.querySelectorAll('.notification-banner.story').forEach(el => el.remove());
+  }
   const banner = document.createElement('div');
-  banner.className = 'notification-banner';
+  banner.className = 'notification-banner' + (notif.sticky ? ' story' : '');
   const iconHTML = IOS_ICONS['wechat'] || '💬';
   banner.innerHTML = `
     <div class="notif-banner-icon" style="background:#07C160;overflow:hidden;">${iconHTML}</div>
@@ -437,16 +440,18 @@ function showNotifBanner(notif) {
     </div>
   `;
   banner.onclick = () => {
-    if (notif.autoSwitch) return; // 游戏流程中自动切换，点击无效
-    // 点击通知：解锁到这条消息并打开微信
-    wechatUnlockedIndex = notif.msgIndex + 1;
-    playSound('message');
-    haptic('light');
-    // 移除该横幅
     banner.classList.add('hide');
     setTimeout(() => banner.remove(), 300);
-    // 打开微信聊天
-    openWeChatFromNotif();
+    // 剧情通知：点击进入对应阶段的聊天
+    if (typeof notif.onClick === 'function') {
+      notif.onClick();
+      return;
+    }
+    if (notif.autoSwitch) return; // 游戏流程中自动切换，点击无效
+    playSound('message');
+    haptic('light');
+    // 点击通知：打开微信
+    openApp('wechat');
   };
   container.appendChild(banner);
 
@@ -455,119 +460,174 @@ function showNotifBanner(notif) {
     requestAnimationFrame(() => banner.classList.add('show'));
   });
 
-  // 5 秒后自动消失
-  const autoHide = setTimeout(() => {
-    if (banner.parentNode) {
-      banner.classList.add('hide');
-      setTimeout(() => banner.remove(), 300);
-    }
-  }, 5000);
-
-  banner._autoHide = autoHide;
+  // 非剧情通知 5 秒后自动消失；剧情通知保持到玩家点击
+  if (!notif.sticky) {
+    const autoHide = setTimeout(() => {
+      if (banner.parentNode) {
+        banner.classList.add('hide');
+        setTimeout(() => banner.remove(), 300);
+      }
+    }, 5000);
+    banner._autoHide = autoHide;
+  }
 }
 
-// 显示下一条微信通知
-function showNextWeChatNotif() {
-  if (wechatNotifCurrentIdx >= wechatNotifQueue.length) {
-    wechatNotifStarted = false;
+// ===== 剧情聊天阶段控制 =====
+// 当前待播放/待查看的聊天阶段索引（null 表示没有待播放阶段）
+let pendingChatPhase = null;
+// 阶段通知定时器
+let phaseNotifyTimer = null;
+// 生真未读消息数（玩家未打开聊天时累计）
+let shengzhenUnread = 0;
+// 正在播放的剧情阶段索引（防止同一阶段被重复播放）
+let playingChatPhase = null;
+// 聊天播放序列令牌：每次开始播放时递增，被取代的旧回调据此自动失效
+let chatSeqToken = 0;
+// 当前阶段下一条待播放消息的绝对索引（支持阶段中途切出后继续播放）
+let chatPhaseCursor = 0;
+// 玩家是否在剧情阶段播放途中切出了微信
+let chatPhasePaused = false;
+
+// 阶段播放途中离开聊天：暂停进度，回来时从断点继续
+function pauseChatPlayback() {
+  if (playingChatPhase === null) return;
+  chatPhasePaused = true;
+}
+
+// 从聊天详情返回微信聊天列表
+function leaveChatToWeChatList() {
+  pauseChatPlayback();
+  clearChatTimers();
+  renderWeChat();
+}
+
+// 聊天中"对方"头像：生真用动态头像，其他账号一律用默认头像
+function getChatThemAvatarHTML() {
+  if (currentChat === OWNER.birthdayGirl) {
+    return `<img src="${getShengzhenAvatar()}" />`;
+  }
+  const chat = CHATS[currentChat];
+  if (chat && !isDefaultAvatar(chat.avatar) && isImageAvatar(chat.avatar)) {
+    return `<img src="${chat.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" />`;
+  }
+  return DEFAULT_AVATAR_SVG;
+}
+
+function getChatMessageList() {
+  const chat = CHATS[OWNER.birthdayGirl];
+  return chat ? chat.messages : [];
+}
+
+// 计算某个剧情阶段在消息数组中的起止索引
+function getPhaseRange(phaseIdx) {
+  const msgs = getChatMessageList();
+  let start = 0;
+  if (phaseIdx > 0) {
+    const prevEnd = msgs.findIndex(m => m[0] === CHAT_PHASES[phaseIdx - 1].end);
+    start = prevEnd >= 0 ? prevEnd + 1 : 0;
+  }
+  let end = msgs.findIndex(m => m[0] === CHAT_PHASES[phaseIdx].end);
+  if (end < 0) end = msgs.length - 1;
+  return { start, end };
+}
+
+// 刷新微信未读角标
+function updateWeChatBadge() {
+  const chat = CHATS[OWNER.birthdayGirl];
+  if (chat) chat.unread = shengzhenUnread;
+  const dockIcons = document.querySelectorAll('.dock .app-icon');
+  const wechatIcon = dockIcons[2];
+  if (!wechatIcon) return;
+  let badge = wechatIcon.querySelector('.app-icon-badge');
+  const total = Object.values(CHATS).reduce((sum, c) => sum + (c.unread || 0), 0);
+  if (total > 0) {
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.className = 'app-icon-badge';
+      wechatIcon.appendChild(badge);
+    }
+    badge.textContent = total > 99 ? '99+' : total;
+  } else if (badge) {
+    badge.remove();
+  }
+}
+
+// 安排下一个剧情阶段
+function scheduleChatPhase(phaseIdx, delay) {
+  pendingChatPhase = phaseIdx;
+  if (phaseNotifyTimer) clearTimeout(phaseNotifyTimer);
+  phaseNotifyTimer = setTimeout(() => deliverChatPhase(phaseIdx), delay);
+}
+
+// 阶段到点：弹出可点击的微信通知（即使在聊天界面也提示，由玩家点击推进）
+function deliverChatPhase(phaseIdx) {
+  if (pendingChatPhase !== phaseIdx) return;
+  const range = getPhaseRange(phaseIdx);
+  const msgs = getChatMessageList().slice(range.start, range.end + 1);
+  const firstThem = msgs.find(m => m[1] === 'them');
+
+  // 第七阶段只有主角自己的消息，静默写入聊天记录
+  if (!firstThem) {
+    completeChatPhase(phaseIdx, true);
     return;
   }
-  const notif = wechatNotifQueue[wechatNotifCurrentIdx];
-  // 通知出现即解锁该条消息
-  wechatUnlockedIndex = Math.max(wechatUnlockedIndex, notif.msgIndex + 1);
 
-  if (isInChatView()) {
-    // 在聊天界面：不弹窗，直接把消息追加到当前聊天中
-    appendLiveMessageToChat(notif);
-    playSound('message');
-    haptic('light');
+  shengzhenUnread++;
+  updateWeChatBadge();
+  if (isInWeChatListView()) renderWeChat();
+  showNotifBanner({
+    text: firstThem[0],
+    time: firstThem[2] || '现在',
+    sticky: true,
+    onClick: () => enterChatForPhase(phaseIdx)
+  });
+}
+
+// 点击通知进入对应阶段的聊天
+function enterChatForPhase(phaseIdx) {
+  // 已在播放同一阶段：忽略重复触发（例如通知横幅被快速连点）
+  if (playingChatPhase === phaseIdx && currentChat === OWNER.birthdayGirl && isInChatView()) return;
+  playSound('message');
+  haptic('light');
+  if (currentApp !== 'wechat') {
+    const dockIcons = document.querySelectorAll('.dock .app-icon');
+    openApp('wechat', dockIcons[2] || null);
+    // 若 openApp 已直接进入聊天，则不再重复打开
+    setTimeout(() => {
+      if (!(currentChat === OWNER.birthdayGirl && isInChatView())) {
+        openChat(OWNER.birthdayGirl);
+      }
+    }, 420);
   } else {
-    // 不在聊天界面：弹出通知横幅
-    showNotifBanner(notif);
-    // 如果当前在微信聊天列表页，刷新列表预览以显示最新消息
-    if (isInWeChatListView()) {
-      renderWeChat();
-    }
+    openChat(OWNER.birthdayGirl);
   }
-  wechatNotifCurrentIdx++;
-  // 每隔一段时间显示下一条
-  wechatNotifTimer = setTimeout(showNextWeChatNotif, 6000);
 }
 
-// 在聊天界面直接追加一条新消息（对方消息）
-function appendLiveMessageToChat(notif) {
-  const container = $('#chatMessages');
-  if (!container) return;
-  // 显示"对方正在输入"动画
-  showTyping(true);
-  setTimeout(() => {
-    showTyping(false);
-    const shengzhenAvatar = getShengzhenAvatar();
-    const div = document.createElement('div');
-    div.innerHTML = `<div class="msg-row them-row"><div class="msg-avatar"><img src="${shengzhenAvatar}" /></div><div class="msg-bubble-wrap"><div class="msg them">${notif.text}</div>${notif.time ? `<div class="msg-time">${notif.time}</div>` : ''}</div></div>`;
-    container.appendChild(div);
-    scrollChatBottom();
-  }, 800);
-}
+// 一个剧情阶段播放完毕
+function completeChatPhase(phaseIdx, silent) {
+  const def = CHAT_PHASES[phaseIdx];
+  const range = getPhaseRange(phaseIdx);
+  wechatUnlockedIndex = Math.max(wechatUnlockedIndex, range.end);
+  pendingChatPhase = null;
+  playingChatPhase = null;
+  chatPhasePaused = false;
+  chatPhaseCursor = 0;
+  gameStage = def.stage;
+  updateAppLockState();
+  updateWeChatBadge();
 
-// 启动微信通知序列
-function startWeChatNotifications() {
-  if (wechatNotifStarted) return;
-  buildWeChatNotifQueue();
-  if (wechatNotifQueue.length === 0) return;
-  wechatNotifStarted = true;
-  // 第一条通知延迟显示
-  wechatNotifTimer = setTimeout(showNextWeChatNotif, 1500);
-}
-
-// 停止微信通知
-function stopWeChatNotifications() {
-  if (wechatNotifTimer) {
-    clearTimeout(wechatNotifTimer);
-    wechatNotifTimer = null;
+  if (def.returnToMoments) {
+    setTimeout(returnToMomentsPhase2, 1500);
+    return;
   }
-  wechatNotifStarted = false;
-}
 
-// 点击通知后打开微信（仅显示已解锁的消息）
-function openWeChatFromNotif() {
-  // 找到微信图标元素用于动画（Dock 中第三个）
-  const dockIcons = document.querySelectorAll('.dock .app-icon');
-  const wechatIcon = dockIcons[2] || dockIcons[0];
-  openApp('wechat', wechatIcon);
-  // 打开生真的聊天，仅显示已解锁部分
-  setTimeout(() => openChatUnlocked(OWNER.birthdayGirl), 400);
-}
+  if (silent && isInWeChatListView()) renderWeChat();
 
-// 打开聊天（仅显示已解锁的消息）
-function openChatUnlocked(name) {
-  currentChat = name;
-  clearChatTimers();
-  const chat = CHATS[name];
-  const content = $('#appContent');
-  // 只取已解锁索引之前的消息
-  const visibleMessages = chat.messages.slice(0, wechatUnlockedIndex + 1);
-  content.innerHTML = `
-    <div class="wx-chat-detail">
-      <div class="wx-chat-header">
-        <button class="wx-chat-back" onclick="clearChatTimers();renderWeChat()">${BACK_ARROW_SVG}</button>
-        <div class="wx-chat-header-name">${name}</div>
-        <button class="wx-chat-skip" onclick="skipChatAnimation()" title="跳过动画">⏩</button>
-      </div>
-      <div class="wx-chat-messages" id="chatMessages"></div>
-      <div class="wx-chat-typing" id="chatTyping" style="display:none;">
-        <span></span><span></span><span></span>
-      </div>
-      <div class="wx-input-area">
-        <button class="wx-input-voice" title="语音" disabled>🔊</button>
-        <input class="wx-input" placeholder="发消息…" disabled />
-        <button class="wx-input-icon" disabled>😊</button>
-        <button class="wx-input-icon" disabled>＋</button>
-      </div>
-    </div>
-  `;
-  // 逐条播放已解锁的消息
-  playChatSequence(visibleMessages);
+  const next = phaseIdx + 1;
+  if (next < CHAT_PHASES.length) {
+    // 第六阶段之后的独白阶段节奏稍快
+    scheduleChatPhase(next, phaseIdx === 6 ? 2500 : 6000);
+  }
 }
 
 /* ========== 主屏幕 ========== */
@@ -605,6 +665,8 @@ let lastAppIconEl = null;
 function goHome() {
   haptic('medium');
   playSound('click');
+  // 阶段播放途中回桌面：记录断点，回来继续
+  pauseChatPlayback();
   clearChatTimers();
   const appView = $('#appView');
 
@@ -657,13 +719,18 @@ function openApp(id, iconEl) {
   // 游戏初始阶段：打开微信显示聊天列表，用户需通过「发现→朋友圈」进入发布
   if (id === 'wechat' && gameStage === 'initial') {
     renderWeChat();
-  } else if (id === 'wechat' && (gameStage === 'moments_phase1' || gameStage === 'moments_phase2')) {
-    // 从聊天切回朋友圈继续输入
+  } else if (id === 'wechat' && gameStage === 'moments_phase1') {
+    // 继续第一阶段自动输入
     renderMomentsCompose();
-    if (gameStage === 'moments_phase1') {
-      // 恢复第一阶段输入（如果未完成）
-      startAutoTyping('phase1');
-    }
+    startAutoTyping('phase1');
+  } else if (id === 'wechat' && gameStage === 'moments_phase2') {
+    // 第二阶段补全由现有定时器继续驱动，这里恢复界面与键盘
+    renderMomentsCompose();
+    const kb = $('#simKeyboard');
+    if (kb) kb.classList.add('show');
+  } else if (id === 'wechat' && gameStage === 'chat_phase1') {
+    // 被生真消息打断后，微信直接进入和生真的对话
+    openChat(OWNER.birthdayGirl);
   } else {
     switch (id) {
       case 'wechat': renderWeChat(); break;
@@ -752,7 +819,7 @@ function updateAppLockState() {
 // 渲染朋友圈发布（编辑）页
 function renderMomentsCompose() {
   const content = $('#appContent');
-  const canSend = gameStage === 'moments_phase2' || gameStage === 'moments_sent';
+  const canSend = momentsDraftReady && gameStage === 'moments_phase2';
   content.innerHTML = `
     <div class="moments-compose">
       <div class="moments-compose-header">
@@ -763,7 +830,7 @@ function renderMomentsCompose() {
       <div class="moments-compose-body">
         <div class="moments-compose-textarea" id="momentsTextarea" contenteditable="false"></div>
         <div class="moments-compose-hint" id="momentsHint">
-          ${gameStage === 'moments_phase1' ? '正在编辑领养启事…' : gameStage === 'moments_phase2' ? '文案已补全，确认后点击发送' : ''}
+          ${gameStage === 'moments_phase1' ? '正在编辑领养启事…' : gameStage === 'moments_phase2' ? (momentsDraftReady ? '文案已完成，点击右上角发送' : '正在补全文案…') : ''}
         </div>
       </div>
       ${renderKeyboard()}
@@ -851,6 +918,7 @@ function startAutoTyping(phase) {
     autoTypeTimer = null;
   }
   autoTypePaused = false;
+  momentsDraftReady = false;
 
   // 显示键盘滑入动画
   const kb = $('#simKeyboard');
@@ -862,9 +930,15 @@ function startAutoTyping(phase) {
   const startTyping = () => {
     if (phase === 'phase1') {
       momentsCursorPos = momentsCurrentText.length;
-      typeTextSequence(MOMENTS_POST_PHASE1, momentsCurrentText.length, () => {
-        onMomentsPhase1Complete();
-      });
+      if (momentsCurrentText.length < MOMENTS_INTERRUPT_AT) {
+        // 先输入到"被消息打断"的位置
+        typeTextSequence(MOMENTS_POST_PHASE1, momentsCurrentText.length, null, MOMENTS_INTERRUPT_AT);
+      } else {
+        // 从聊天返回后继续补全第一阶段文案，完成后进入第二阶段补全
+        typeTextSequence(MOMENTS_POST_PHASE1, momentsCurrentText.length, () => {
+          startPhase2Typing();
+        });
+      }
     } else if (phase === 'phase2') {
       startPhase2Typing();
     }
@@ -874,7 +948,8 @@ function startAutoTyping(phase) {
 
 // 逐字输入文本序列（光标始终在末尾）
 // 加入真实输入的纠结感：基础速度变慢，随机插入较长停顿
-function typeTextSequence(targetText, startIdx, onDone) {
+// stopAt：输入到指定字符数时停下，触发剧情打断（null 表示不打断）
+function typeTextSequence(targetText, startIdx, onDone, stopAt) {
   let i = startIdx;
   const typeNext = () => {
     if (autoTypePaused) {
@@ -884,6 +959,11 @@ function typeTextSequence(targetText, startIdx, onDone) {
     if (i >= targetText.length) {
       autoTypeTimer = null;
       if (onDone) onDone();
+      return;
+    }
+    if (stopAt != null && i >= stopAt) {
+      autoTypeTimer = null;
+      onMomentsTypingInterrupted();
       return;
     }
     const ch = targetText[i];
@@ -910,6 +990,7 @@ function typeTextSequence(targetText, startIdx, onDone) {
 
 // 第二阶段完整流程：光标回移 → 输入"糖糖，" → 光标跳至末尾 → 输入后半段
 function startPhase2Typing() {
+  momentsDraftReady = false;
   // 1. 当前文字为 phase1 结果，光标在末尾
   momentsCurrentText = MOMENTS_POST_PHASE1;
   momentsCursorPos = momentsCurrentText.length;
@@ -928,6 +1009,7 @@ function startPhase2Typing() {
         const fullTarget = momentsCurrentText + restText;
         typeTextSequence(fullTarget, momentsCurrentText.length, () => {
           // 第二阶段完成：启用发送按钮
+          momentsDraftReady = true;
           const btn = $('#momentsSendBtn');
           if (btn) btn.disabled = false;
           const hint = $('#momentsHint');
@@ -1004,167 +1086,53 @@ function mapCharToKey(ch) {
   return keys[code % keys.length];
 }
 
-// 第一阶段输入完成：触发生真第一条消息，强制切换到聊天
-function onMomentsPhase1Complete() {
+// 朋友圈输入被生真的消息打断：暂停输入，弹出可点击的微信通知
+function onMomentsTypingInterrupted() {
+  if (gameStage !== 'moments_phase1') return;
   gameStage = 'chat_phase1';
-  // 暂停自动输入
   autoTypePaused = true;
   if (autoTypeTimer) {
     clearTimeout(autoTypeTimer);
     autoTypeTimer = null;
   }
-  // 解锁到生真第一条消息
+
   const chat = CHATS[OWNER.birthdayGirl];
-  let firstThemIdx = -1;
-  if (chat) {
-    for (let idx = 0; idx < chat.messages.length; idx++) {
-      if (chat.messages[idx][1] === 'them') {
-        firstThemIdx = idx;
-        wechatUnlockedIndex = idx + 1;
-        break;
-      }
-    }
-  }
-  // 显示通知横幅（游戏流程中不可点击，自动切换）
-  const firstThem = firstThemIdx >= 0 ? chat.messages[firstThemIdx] : null;
-  if (firstThem) {
-    showNotifBanner({ text: firstThem[0], time: firstThem[2] || '现在', msgIndex: firstThemIdx, autoSwitch: true });
-  }
+  const firstThem = chat.messages.find(m => m[1] === 'them');
+  pendingChatPhase = 0;
+  shengzhenUnread++;
+  updateWeChatBadge();
+  showNotifBanner({
+    text: firstThem ? firstThem[0] : '生真发来一条消息',
+    time: firstThem ? (firstThem[2] || '现在') : '现在',
+    sticky: true,
+    onClick: () => enterChatForPhase(0)
+  });
   playSound('message');
   haptic('medium');
-  // 延迟切换到聊天
-  setTimeout(() => {
-    forceChatFromMoments();
-  }, 1200);
 }
 
-// 强制从朋友圈切换到聊天界面
-function forceChatFromMoments() {
-  const content = $('#appContent');
-  currentChat = OWNER.birthdayGirl;
-  clearChatTimers();
-  chatTriggerFired = false;
-  // 标记生真的聊天已查看（避免后续重复弹窗）
-  chatViewed[OWNER.birthdayGirl] = true;
-  const chat = CHATS[OWNER.birthdayGirl];
-  // 只播放到触发消息为止的序列
-  const triggerIdx = chat.messages.findIndex(m => m[0] === CHAT_TRIGGER_MSG);
-  const visibleMessages = chat.messages.slice(0, triggerIdx + 1);
-  content.innerHTML = `
-    <div class="wx-chat-detail">
-      <div class="wx-chat-header">
-        <button class="wx-chat-back" onclick="returnToMomentsFromChat()">${BACK_ARROW_SVG}</button>
-        <div class="wx-chat-header-name">${OWNER.birthdayGirl}</div>
-        <div style="width:40px;"></div>
-      </div>
-      <div class="wx-chat-messages" id="chatMessages"></div>
-      <div class="wx-chat-typing" id="chatTyping" style="display:none;">
-        <span></span><span></span><span></span>
-      </div>
-      <div class="wx-input-area">
-        <button class="wx-input-voice" title="语音" disabled>🔊</button>
-        <input class="wx-input" placeholder="发送朋友圈后即可回复…" disabled />
-        <button class="wx-input-icon" disabled>😊</button>
-        <button class="wx-input-icon" disabled>＋</button>
-      </div>
-    </div>
-  `;
-  playChatSequenceWithTrigger(visibleMessages);
-}
-
-// 逐条播放聊天，遇到触发消息后切换回朋友圈
-function playChatSequenceWithTrigger(messages) {
-  const container = $('#chatMessages');
-  if (!container) return;
-  let idx = 0;
-  const shengzhenAvatar = getShengzhenAvatar();
-  const laqiyaAvatarHTML = getAppIconHTML(OWNER.avatar);
-
-  function next() {
-    if (idx >= messages.length) return;
-    const [text, type, time] = messages[idx];
-
-    if (type === 'date') {
-      appendMessage(container, `<div class="msg-date">${text}</div>`);
-      idx++;
-      const t = setTimeout(next, 600);
-      chatTimers.push(t);
-    } else if (type === 'system') {
-      appendMessage(container, `<div class="msg-system">🎙️ ${text}</div>`);
-      playSound('message');
-      idx++;
-      const t = setTimeout(next, 800);
-      chatTimers.push(t);
-    } else if (type === 'them') {
-      showTyping(true);
-      const delay = 2200 + Math.random() * 2000;
-      const t = setTimeout(() => {
-        showTyping(false);
-        appendMessage(container, `<div class="msg-row them-row"><div class="msg-avatar"><img src="${getShengzhenAvatar()}" /></div><div class="msg-bubble-wrap"><div class="msg them">${text}</div>${time ? `<div class="msg-time">${time}</div>` : ''}</div></div>`);
-        playSound('message');
-        haptic('light');
-        idx++;
-        // 检查是否触发生真头像更换
-        if (text === SHENGZHEN_AVATAR_CHANGE_MSG) {
-          changeShengzhenAvatar();
-        }
-        // 检查是否到达触发消息
-        if (text === CHAT_TRIGGER_MSG && !chatTriggerFired) {
-          chatTriggerFired = true;
-          onChatTriggerHit();
-          return;
-        }
-        const t2 = setTimeout(next, 1000 + Math.random() * 800);
-        chatTimers.push(t2);
-      }, delay);
-      chatTimers.push(t);
-    } else {
-      // 拉齐亚的消息：打字速度适中偏快
-      showTyping(true);
-      let meDelay = 800 + Math.random() * 800;
-      const t = setTimeout(() => {
-        showTyping(false);
-        appendMessage(container, `<div class="msg-row me-row"><div class="msg-bubble-wrap"><div class="msg me">${text}</div>${time ? `<div class="msg-time">${time}</div>` : ''}</div><div class="msg-avatar me-avatar">${laqiyaAvatarHTML}</div></div>`);
-        playSound('click');
-        idx++;
-        const t2 = setTimeout(next, 600 + Math.random() * 400);
-        chatTimers.push(t2);
-      }, meDelay);
-      chatTimers.push(t);
-    }
-    scrollChatBottom();
-  }
-  const t0 = setTimeout(next, 400);
-  chatTimers.push(t0);
-}
-
-// 聊天触发命中：延迟后切回朋友圈第二阶段
-function onChatTriggerHit() {
-  wechatUnlockedIndex = CHATS[OWNER.birthdayGirl].messages.findIndex(m => m[0] === CHAT_TRIGGER_MSG) + 1;
-  setTimeout(() => {
-    gameStage = 'moments_phase2';
-    returnToMomentsPhase2();
-  }, 1800);
-}
-
-// 切回朋友圈第二阶段
+// 切回朋友圈输入界面：先补完第一阶段文案，再自动补全"糖糖"和后半段
 function returnToMomentsPhase2() {
-  const content = $('#appContent');
-  content.innerHTML = '';
+  autoTypePaused = false;
+  momentsDraftReady = false;
   renderMomentsCompose();
-  // 补全文案：插入糖糖 + 后半段
-  setTimeout(() => startAutoTyping('phase2'), 400);
+  // 重新显示模拟键盘并继续补全文案
+  startAutoTyping('phase1');
 }
 
 // 从聊天返回朋友圈（用户点击返回键时）
 function returnToMomentsFromChat() {
   clearChatTimers();
   if (gameStage === 'chat_phase1') {
-    // 不允许提前返回，提示
-    showLockedHint('请等待消息播放完毕');
+    // 剧情未播放完，不允许提前离开
+    showLockedHint('请先看完生真的消息');
     return;
   }
-  returnToMomentsPhase2();
+  if (gameStage === 'moments_phase2') {
+    returnToMomentsPhase2();
+    return;
+  }
+  renderWeChat();
 }
 
 // 取消朋友圈编辑
@@ -1178,7 +1146,7 @@ function cancelMomentsCompose() {
 
 // 发送朋友圈
 function sendMomentsPost() {
-  if (gameStage !== 'moments_phase2') return;
+  if (gameStage !== 'moments_phase2' || !momentsDraftReady) return;
   if (autoTypeTimer) {
     clearTimeout(autoTypeTimer);
     autoTypeTimer = null;
@@ -1196,18 +1164,14 @@ function sendMomentsPost() {
     comments: []
   });
   gameStage = 'moments_sent';
-  // 重置生真聊天的"已查看"标记，确保后续打开时逐条播放消息
-  chatViewed[OWNER.birthdayGirl] = false;
   haptic('success');
   playSound('unlock');
   // 解锁所有 App
   updateAppLockState();
   // 显示朋友圈列表（含刚发的动态）
   renderMomentsFeed();
-  // 延迟弹出"生真发来消息"的提示
-  setTimeout(() => {
-    showAvatarChangeNotice();
-  }, 1500);
+  // 朋友圈发出后，进入第二阶段对话（弹出生真的新消息通知）
+  scheduleChatPhase(1, 2200);
 }
 
 // 显示"生真发来消息"的系统提示
@@ -1303,9 +1267,10 @@ function renderMomentsFeed() {
 function renderWeChat() {
   const content = $('#appContent');
   // 朋友圈发送前：不显示任何未读数
-  const totalUnread = gameStage === 'moments_sent' ? Object.values(CHATS).reduce((sum, c) => sum + (c.unread || 0), 0) : 0;
-  // 朋友圈发送后才允许进入聊天
-  const canEnterChats = gameStage === 'moments_sent';
+  const chatsUnlocked = isStageUnlocked('moments_sent');
+  const totalUnread = chatsUnlocked ? Object.values(CHATS).reduce((sum, c) => sum + (c.unread || 0), 0) : 0;
+  // 朋友圈发送后才允许进入聊天（剧情强制入口例外）
+  const canEnterChats = chatsUnlocked || pendingChatPhase !== null;
   content.innerHTML = `
     <div class="wx-list-wrap">
       <div class="wx-list-header">
@@ -1320,17 +1285,22 @@ function renderWeChat() {
           let lastTime = getLastChatTime(chat);
           let lastText = getLastChatText(chat);
           // 朋友圈发送前：所有聊天都不显示任何消息预览和时间
-          if (gameStage !== 'moments_sent') {
+          if (!chatsUnlocked) {
             lastText = '';
             lastTime = '';
-          } else if (name === OWNER.birthdayGirl && wechatUnlockedIndex >= 0) {
-            // 朋友圈发送后：生真的聊天显示已解锁的最新消息
-            const visibleMsgs = chat.messages.slice(0, wechatUnlockedIndex + 1);
-            for (let i = visibleMsgs.length - 1; i >= 0; i--) {
-              if (visibleMsgs[i][1] !== 'date') {
-                lastText = visibleMsgs[i][0];
-                lastTime = visibleMsgs[i][2] || lastTime;
-                break;
+          }
+          // 生真的聊天只显示已解锁的最新消息，避免剧透
+          if (name === OWNER.birthdayGirl) {
+            lastText = '';
+            lastTime = '';
+            if (wechatUnlockedIndex >= 0) {
+              const visibleMsgs = chat.messages.slice(0, wechatUnlockedIndex + 1);
+              for (let i = visibleMsgs.length - 1; i >= 0; i--) {
+                if (visibleMsgs[i][1] !== 'date') {
+                  lastText = visibleMsgs[i][0];
+                  lastTime = visibleMsgs[i][2] || lastTime;
+                  break;
+                }
               }
             }
           }
@@ -1351,12 +1321,13 @@ function renderWeChat() {
             ? `openChat('${name}')`
             : `showLockedHint('发送朋友圈后即可查看聊天')`;
           // 朋友圈发送前：隐藏所有未读标记
-          const showUnread = chat.unread && gameStage === 'moments_sent';
+          const unreadCount = name === OWNER.birthdayGirl ? shengzhenUnread : (chat.unread || 0);
+          const showUnread = chatsUnlocked && unreadCount > 0;
           return `
           <div class="wx-chat-item" onclick="${clickHandler}">
             <div class="wx-chat-avatar" style="background:${name === OWNER.birthdayGirl ? 'transparent' : chat.avatarColor};">
               ${avatarHTML}
-              ${showUnread ? `<span class="wx-unread-dot">${chat.unread > 99 ? '99+' : chat.unread}</span>` : ''}
+              ${showUnread ? `<span class="wx-unread-dot">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}
             </div>
             <div class="wx-chat-body">
               <div class="wx-chat-row1">
@@ -1467,10 +1438,14 @@ function openMomentsFromDiscover() {
     gameStage = 'moments_phase1';
     renderMomentsCompose();
     startAutoTyping('phase1');
-  } else if (gameStage === 'moments_sent') {
-    renderMomentsFeed();
-  } else if (gameStage === 'moments_phase1' || gameStage === 'moments_phase2') {
+  } else if (gameStage === 'moments_phase1') {
     renderMomentsCompose();
+    startAutoTyping('phase1');
+  } else if (gameStage === 'moments_phase2') {
+    renderMomentsCompose();
+  } else if (isStageUnlocked('moments_sent')) {
+    // 朋友圈已发送，之后随时可以查看
+    renderMomentsFeed();
   } else {
     showLockedHint('请先完成聊天流程');
   }
@@ -1500,43 +1475,31 @@ function clearChatTimers() {
   chatTimers.forEach(t => clearTimeout(t));
   chatTimers = [];
   if (chatTypingTimer) { clearInterval(chatTypingTimer); chatTypingTimer = null; }
+  chatSeqToken++; // 使尚未执行的播放回调全部失效
 }
 
 function openChat(name) {
-  // 安全锁：朋友圈发送前不允许进入任何聊天（剧情驱动的强制入口不受此限制）
-  if (gameStage !== 'moments_sent') {
+  const isShengzhen = name === OWNER.birthdayGirl;
+  // 安全锁：朋友圈发送前不允许进入聊天（剧情驱动的入口不受此限制）
+  if (isShengzhen && !isStageUnlocked('moments_sent') && pendingChatPhase === null) {
     showLockedHint('发送朋友圈后即可查看聊天');
     return;
   }
+  if (!CHATS[name]) return;
+
+  // 该剧情阶段正在当前聊天中播放且未被打断：直接返回，避免重建界面导致消息重复
+  if (isShengzhen && pendingChatPhase !== null && playingChatPhase === pendingChatPhase &&
+      currentChat === name && isInChatView() && !chatPhasePaused) {
+    scrollChatBottom();
+    return;
+  }
+
   currentChat = name;
   clearChatTimers();
-  // 检查是否已查看过（避免重复弹窗/重播动画）
-  const alreadyViewed = !!chatViewed[name];
-  chatViewed[name] = true;
   const chat = CHATS[name];
   const content = $('#appContent');
-  // 生真的聊天：朋友圈发送后解锁全部消息，否则仅显示已解锁部分
-  let visibleMessages = chat.messages;
-  if (name === OWNER.birthdayGirl) {
-    if (gameStage === 'moments_sent') {
-      wechatUnlockedIndex = chat.messages.length;
-      if (alreadyViewed) {
-        // 已查看过：显示全部消息作为聊天记录
-        visibleMessages = chat.messages;
-      } else {
-        // 首次查看：从「我可以领养糖糖哦——」开始播放
-        visibleMessages = chat.messages;
-        const resumeIdx = chat.messages.findIndex(m => m[0] === '我可以领养糖糖哦——');
-        if (resumeIdx > 0) {
-          visibleMessages = chat.messages.slice(resumeIdx);
-        }
-      }
-    } else {
-      visibleMessages = chat.messages.slice(0, wechatUnlockedIndex + 1);
-    }
-  }
-  // 生真的聊天在朋友圈发送前禁用输入
-  const canReply = (name !== OWNER.birthdayGirl) || gameStage === 'moments_sent';
+  // 生真的聊天由剧情驱动，不允许玩家自由输入
+  const canReply = !isShengzhen;
   const inputArea = canReply
     ? `<div class="wx-input-area">
         <button class="wx-input-voice" title="语音">🔊</button>
@@ -1546,14 +1509,14 @@ function openChat(name) {
       </div>`
     : `<div class="wx-input-area">
         <button class="wx-input-voice" title="语音" disabled>🔊</button>
-        <input class="wx-input" placeholder="发送朋友圈后即可回复…" disabled />
+        <input class="wx-input" placeholder="剧情推进中…" disabled />
         <button class="wx-input-icon" disabled>😊</button>
         <button class="wx-input-icon" disabled>＋</button>
       </div>`;
   content.innerHTML = `
     <div class="wx-chat-detail">
       <div class="wx-chat-header">
-        <button class="wx-chat-back" onclick="clearChatTimers();renderWeChat()">${BACK_ARROW_SVG}</button>
+        <button class="wx-chat-back" onclick="leaveChatToWeChatList()">${BACK_ARROW_SVG}</button>
         <div class="wx-chat-header-name">${name}</div>
         <button class="wx-chat-skip" onclick="skipChatAnimation()" title="跳过动画">⏩</button>
       </div>
@@ -1564,46 +1527,109 @@ function openChat(name) {
       ${inputArea}
     </div>
   `;
-  // 已查看过的聊天：直接渲染全部（静态聊天记录，不再触发动画/效果）
-  // 首次查看：逐条播放（营造真实对话节奏）
-  if (alreadyViewed) {
-    renderAllMessages($('#chatMessages'), visibleMessages);
+
+  const container = $('#chatMessages');
+
+  if (!isShengzhen) {
+    renderAllMessages(container, chat.messages, false);
     scrollChatBottom();
+    return;
+  }
+
+  // 打开生真聊天即视为已读
+  shengzhenUnread = 0;
+  updateWeChatBadge();
+
+  // 先渲染已解锁的过往聊天记录
+  const unlockedEnd = Math.min(wechatUnlockedIndex, chat.messages.length - 1);
+  if (unlockedEnd >= 0) {
+    renderAllMessages(container, chat.messages.slice(0, unlockedEnd + 1), false);
+  }
+
+  // 有待播放的剧情阶段：接着逐条播放新消息
+  if (pendingChatPhase !== null && getPhaseRange(pendingChatPhase).end > unlockedEnd) {
+    const range = getPhaseRange(pendingChatPhase);
+    const resumeFrom = Math.max(chatPhasePaused && playingChatPhase === pendingChatPhase ? chatPhaseCursor : 0, range.start);
+    // 阶段中途离开过：先把中断前已经显示的消息补渲染回来（不重复触发动画/弹窗）
+    if (chatPhasePaused && resumeFrom > unlockedEnd + 1) {
+      renderAllMessages(container, chat.messages.slice(unlockedEnd + 1, resumeFrom), false);
+    }
+    playChatPhase(pendingChatPhase, resumeFrom);
   } else {
-    playChatSequence(visibleMessages);
+    showTyping(false);
+    scrollChatBottom();
   }
 }
 
-// 逐条播放聊天消息
-function playChatSequence(messages) {
+// 播放某个剧情阶段的聊天
+// resumeFrom：断点索引；不传则从该阶段第一条未播放的消息开始
+function playChatPhase(phaseIdx, resumeFrom) {
   const container = $('#chatMessages');
   if (!container) return;
+  const range = getPhaseRange(phaseIdx);
+  // 播放起点与已渲染的历史记录去重：只播放尚未显示过的消息
+  const start = resumeFrom != null ? resumeFrom : Math.max(range.start, wechatUnlockedIndex + 1);
+  if (range.end < start) { completeChatPhase(phaseIdx); return; }
+  playingChatPhase = phaseIdx;
+  chatPhasePaused = false;
+  chatPhaseCursor = start;
+  const messages = getChatMessageList().slice(start, range.end + 1);
+  playChatSequence(messages, () => completeChatPhase(phaseIdx), {
+    // 每显示一条就推进断点，玩家随时切出都能从下一条继续
+    onProgress: consumed => { chatPhaseCursor = start + consumed; }
+  });
+}
+
+// 逐条播放聊天消息，播放完毕后执行 onDone
+function playChatSequence(messages, onDone, opts = {}) {
+  const container = $('#chatMessages');
+  if (!container) return;
+  const token = ++chatSeqToken; // 序列令牌：被更新的播放或界面重建取代后，旧回调自动失效
+  const alive = () => token === chatSeqToken;
+  const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+  const report = () => { if (onProgress) onProgress(idx); };
   let idx = 0;
-  let skipFlag = false;
-  const shengzhenAvatar = getShengzhenAvatar();
+  let finished = false;
   const laqiyaAvatarHTML = getAppIconHTML(OWNER.avatar);
 
-  window._skipChat = () => { skipFlag = true; };
+  const finish = () => {
+    if (finished || !alive()) return;
+    finished = true;
+    window._skipChat = null;
+    showTyping(false);
+    if (onDone) onDone();
+  };
+
+  window._skipChat = () => {
+    if (finished || !alive()) return;
+    finished = true;
+    clearChatTimers();
+    renderAllMessages(container, messages.slice(idx), true);
+    scrollChatBottom();
+    window._skipChat = null;
+    showTyping(false);
+    if (onDone) onDone();
+  };
 
   function next() {
-    if (skipFlag) {
-      // 跳过：一次性渲染剩余所有消息
-      renderAllMessages(container, messages.slice(idx));
-      scrollChatBottom();
+    if (finished || !alive()) return;
+    if (idx >= messages.length) {
+      finish();
       return;
     }
-    if (idx >= messages.length) return;
     const [text, type, time] = messages[idx];
 
     if (type === 'date') {
       appendMessage(container, `<div class="msg-date">${text}</div>`);
       idx++;
+      report();
       const t = setTimeout(next, 600);
       chatTimers.push(t);
     } else if (type === 'system') {
       appendMessage(container, `<div class="msg-system">🎙️ ${text}</div>`);
       playSound('message');
       idx++;
+      report();
       const t = setTimeout(next, 800);
       chatTimers.push(t);
     } else if (type === 'them') {
@@ -1612,10 +1638,11 @@ function playChatSequence(messages) {
       const delay = 2200 + Math.random() * 2000;
       const t = setTimeout(() => {
         showTyping(false);
-        appendMessage(container, `<div class="msg-row them-row"><div class="msg-avatar"><img src="${getShengzhenAvatar()}" /></div><div class="msg-bubble-wrap"><div class="msg them">${text}</div>${time ? `<div class="msg-time">${time}</div>` : ''}</div></div>`);
+        appendMessage(container, `<div class="msg-row them-row"><div class="msg-avatar">${getChatThemAvatarHTML()}</div><div class="msg-bubble-wrap"><div class="msg them">${text}</div>${time ? `<div class="msg-time">${time}</div>` : ''}</div></div>`);
         playSound('message');
         haptic('light');
         idx++;
+        report();
         // 检查是否触发生真头像更换
         if (text === SHENGZHEN_AVATAR_CHANGE_MSG) {
           changeShengzhenAvatar();
@@ -1633,6 +1660,7 @@ function playChatSequence(messages) {
         appendMessage(container, `<div class="msg-row me-row"><div class="msg-bubble-wrap"><div class="msg me">${text}</div>${time ? `<div class="msg-time">${time}</div>` : ''}</div><div class="msg-avatar me-avatar">${laqiyaAvatarHTML}</div></div>`);
         playSound('click');
         idx++;
+        report();
         const t2 = setTimeout(next, 600 + Math.random() * 400);
         chatTimers.push(t2);
       }, meDelay);
@@ -1669,7 +1697,8 @@ function skipChatAnimation() {
 }
 
 // 一次性渲染所有剩余消息
-function renderAllMessages(container, messages) {
+// triggerAvatarChange：是否触发"生真更换头像"弹窗（渲染历史记录时关闭）
+function renderAllMessages(container, messages, triggerAvatarChange = true) {
   const laqiyaAvatarHTML = getAppIconHTML(OWNER.avatar);
   let avatarShouldChange = false;
   messages.forEach(([text, type, time]) => {
@@ -1677,13 +1706,13 @@ function renderAllMessages(container, messages) {
     if (type === 'date') html = `<div class="msg-date">${text}</div>`;
     else if (type === 'system') html = `<div class="msg-system">🎙️ ${text}</div>`;
     else if (type === 'them') {
-      html = `<div class="msg-row them-row"><div class="msg-avatar"><img src="${getShengzhenAvatar()}" /></div><div class="msg-bubble-wrap"><div class="msg them">${text}</div>${time ? `<div class="msg-time">${time}</div>` : ''}</div></div>`;
+      html = `<div class="msg-row them-row"><div class="msg-avatar">${getChatThemAvatarHTML()}</div><div class="msg-bubble-wrap"><div class="msg them">${text}</div>${time ? `<div class="msg-time">${time}</div>` : ''}</div></div>`;
       if (text === SHENGZHEN_AVATAR_CHANGE_MSG) avatarShouldChange = true;
     }
     else html = `<div class="msg-row me-row"><div class="msg-bubble-wrap"><div class="msg me">${text}</div>${time ? `<div class="msg-time">${time}</div>` : ''}</div><div class="msg-avatar me-avatar">${laqiyaAvatarHTML}</div></div>`;
     appendMessage(container, html);
   });
-  if (avatarShouldChange) changeShengzhenAvatar();
+  if (avatarShouldChange && triggerAvatarChange) changeShengzhenAvatar();
   showTyping(false);
 }
 

@@ -5,13 +5,13 @@
    ============================================================ */
 
 // ===== 手机密码（4位数字）=====
-const PASSCODE = '0000';
+const PASSCODE = '9999';
 
 // ===== 手机主人信息 =====
 const OWNER = {
   name: '拉齐亚',            // 真实姓名（用于聊天记录、语音备忘录、朋友圈等故事内容）
   wechatName: '现用idVram', // 微信昵称（仅微信界面显示用）
-  signature: '曾用名：海月九', // 微信个性签名
+  signature: '曾用名海月九，现在已经不接单了', // 微信个性签名
   birthdayGirl: '生真',   // 爱人名字
   birthdayMonth: 3,        // 生真生日月
   birthdayDay: 19,         // 生真生日日
@@ -35,7 +35,7 @@ const LOCK_NOTIFICATIONS = [
     icon: '🔔',
     iconBg: '#ff9500',
     title: '提醒事项',
-    text: '手机密码，真的非要有吗？',
+    text: '没劲，一定要有手机锁屏密码吗？',
     time: '一年前'
   },
   {  app: 'reminders',
@@ -65,7 +65,7 @@ const APPS = [
 const DOCK_APPS = [
   { id: 'phone',    name: '电话',   icon: 'phone',   color: 'linear-gradient(135deg, #65f38f, #28c253)' },
   { id: 'safari',   name: 'Safari', icon: 'safari',  color: 'linear-gradient(135deg, #3aa8ff, #0f5fe0)' },
-  { id: 'wechat',   name: '微信',   icon: 'wechat',  color: 'linear-gradient(135deg, #34d058, #1aad19)', badge: 5 },
+  { id: 'wechat',   name: '微信',   icon: 'wechat',  color: 'linear-gradient(135deg, #34d058, #1aad19)' },
   { id: 'music',    name: '音乐',   icon: 'music',   color: 'linear-gradient(135deg, #ff5e62, #ff2d55)' },
 ];
 
@@ -147,7 +147,7 @@ const CHATS = {
     avatar: DEFAULT_AVATAR,
     avatarColor: '#e5e5ea',
     messages: [
-      ['小伙子，房子还续租吗？', 'them', '昨天'],
+      ['小伙子，那边的房子还续租吗？看你好久没来了', 'them', '昨天'],
       ['续租的。', 'me', '昨天'],
       ['好的，记得按时交房租。', 'them', '昨天'],
     ]
@@ -159,6 +159,8 @@ const CHATS = {
     messages: [
       ['明天训练赛，别迟到', 'them', '昨天'],
       ['收到。', 'me', '昨天'],
+      ['收到', 'them', '今天'],
+      ['收到', 'them', '今天'],
       ['收到', 'them', '今天'],
       ['收到', 'them', '今天'],
     ]
@@ -174,10 +176,10 @@ const VOICE_MEMOS = [
     title: '通话录音 · 生真',
     date: '某天晚上 11:20 PM',
     duration: '0:42',
-    unlockStage: 'moments_sent',
+    unlockStage: 'chat_phase5_done',
     waveform: [0.3, 0.6, 0.4, 0.8, 0.5, 0.7, 0.3, 0.9, 0.4, 0.6, 0.5, 0.7, 0.3, 0.8, 0.4, 0.6, 0.5, 0.9, 0.3, 0.7, 0.5, 0.6, 0.4, 0.8, 0.3, 0.5, 0.7, 0.4, 0.6, 0.9],
     segments: [
-      { speaker: '生真', time: '11:20', text: '（吸鼻子）呜……', color: '#ff6b9d' },
+      { speaker: '生真', time: '11:20', text: '（拖长语调）呜……', color: '#ff6b9d' },
       { speaker: '拉齐亚', time: '11:21', text: '怎么了。', color: '#5a8dee' },
       { speaker: '生真', time: '11:22', text: '我想给你打电话。', color: '#ff6b9d' },
       { speaker: '拉齐亚', time: '11:22', text: '？那打吧。', color: '#5a8dee' },
@@ -191,7 +193,7 @@ const VOICE_MEMOS = [
     title: '现场录音 · 生真来家里',
     date: '第二天 12:00 PM',
     duration: '1:32',
-    unlockStage: 'moments_sent',
+    unlockStage: 'chat_phase8_done',
     waveform: [0.4, 0.7, 0.5, 0.9, 0.3, 0.8, 0.6, 0.4, 0.7, 0.5, 0.9, 0.3, 0.6, 0.8, 0.4, 0.7, 0.5, 0.9, 0.3, 0.8, 0.6, 0.4, 0.7, 0.5, 0.9, 0.3, 0.6, 0.8, 0.4, 0.7],
     segments: [
       { speaker: '生真', time: '12:00', text: '拉齐亚我到了哦，来帮我开一下门吧？', color: '#ff6b9d' },
@@ -212,7 +214,7 @@ const VOICE_MEMOS = [
     title: '糖糖的呼噜声',
     date: '上周 9:00 PM',
     duration: '0:15',
-    unlockStage: 'moments_sent',
+    unlockStage: 'chat_phase8_done',
     waveform: [0.2, 0.3, 0.25, 0.35, 0.2, 0.3, 0.25, 0.4, 0.2, 0.3, 0.25, 0.35, 0.2, 0.3, 0.25, 0.35, 0.2, 0.3, 0.25, 0.4, 0.2, 0.3, 0.25, 0.35, 0.2, 0.3, 0.25, 0.35, 0.2, 0.3],
     segments: [
       { speaker: '糖糖', time: '0:00', text: '（呼噜声）呼……呼……', color: '#a8e6a3' },
@@ -223,13 +225,13 @@ const VOICE_MEMOS = [
 // ===== 备忘录 =====
 // unlockStage: 在哪个游戏阶段解锁显示
 const NOTES = [
-  { id: 1, pinned: true, title: '网上说的宠物用品清单', body: '狗粮（已买）\n狗窝\n牵引绳\n尿垫\n玩具\n\n注：买贵一点的', date: '昨天', unlockStage: 'initial' },
-  { id: 2, pinned: true, title: '生真家地址', body: '别墅区·XX路XX号\n\n放假了就过去看看。\n糖糖现在叫糖糖，没有被改名。', date: '上周', unlockStage: 'moments_sent' },
-  { id: 3, pinned: true, title: '糖糖的朋友们', body: '糖糖（边牧，黑白）\n甜甜（边牧）\n心心（边牧）\n软软（边牧）\n海月九（缅因猫）\n\n海月九……为什么取这个名字？', date: '上周', unlockStage: 'moments_sent' },
-  { id: 4, pinned: true, title: '天气晴朗', body: '"我想打电话给你，告诉你天气晴朗。"\n\n……他到底是什么意思。\n（通话录音见语音备忘录）', date: '前天', unlockStage: 'moments_sent' },
-  { id: 5, title: '遛狗注意事项', body: '1. 四只边牧会爆冲，绳子会缠在一起\n2. 不小心的话就会被狗拖着跑\n3. 运动完不能直接躺下（生真说的）\n4. 猫不是好猫', date: '上周', unlockStage: 'moments_sent' },
-  { id: 6, title: '午饭', body: '要记得给生真买点菜做饭\n真的会好吃吗？', date: '今天', unlockStage: 'moments_sent' },
-  { id: 7, title: '购物', body: '狗粮（给狗的）\n猫粮（海月九的）\n自己的拼好饭', date: '今天', unlockStage: 'moments_sent' },
+  { id: 1, pinned: true, title: '网上说的基础宠物用品清单', body: '狗粮（已买）\n狗窝\n牵引绳\n尿垫\n玩具\n\n注：不知道哪个好，只能买贵一点的', date: '昨天', unlockStage: 'initial' },
+  { id: 2, pinned: true, title: '生真家的地址', body: '别墅区·XX路XX号\n\n答应了那孩子的放假了就过去看看。\n糖糖竟然没有改名，现在变得好看多了。', date: '上周', unlockStage: 'chat_phase3_done' },
+  { id: 3, pinned: true, title: '糖糖的朋友们', body: '糖糖（边牧，黑白）\n甜甜（边牧）\n心心（边牧）\n软软（边牧）好吧……暂时还不能全部分辨出来。\n海月九（弄坏了我裤子的缅因猫）\n\n海月九……为什么取这个名字？还是别问了。', date: '上周', unlockStage: 'chat_phase4_done' },
+  { id: 4, pinned: true, title: '别墅区的外卖拿起来好麻烦', body: '步骤是先通知保安，然后再去打业主电话要授权，这样的话之后还是少点外卖吧。虽然生真说没关系,' , date: '前天', unlockStage: 'chat_phase4_done' },
+  { id: 5, title: '遛狗注意事项', body: '1. 四只边牧跑动的量很大，要走至少一个小时\n2. 四只狗跑的时候要尽量分散一点，不小心的话就会被黏在一起的四只狗拖着跑\n3. 运动完不能直接躺下（生真说的）\n4. 海月九真的不是好猫', date: '上周', unlockStage: 'chat_phase4_done' },
+  { id: 6, title: '午饭', body: '要记得给生真买点菜做饭\n好久没试过了，真的会好吃吗？', date: '今天', unlockStage: 'chat_phase4_done' },
+  { id: 7, title: '购物', body: '狗粮（给小狗们的）\n猫粮（便宜了海月九）\n自己的拼好饭', date: '今天', unlockStage: 'chat_phase4_done' },
 ];
 
 // ===== 日历事件 =====
@@ -241,7 +243,7 @@ const CALENDAR_EVENTS = [
 
 // ===== 天气 =====
 const WEATHER = {
-  city: 'S市',
+  city: '上海',
   temp: 24,
   desc: '晴',
   high: 28,
@@ -270,7 +272,7 @@ const MOMENTS = [
     avatar: '拉',
     avatarColor: 'linear-gradient(135deg, #5a8dee, #3a6fd8)',
     time: '昨天',
-    text: '训练结束，好累。',
+    text: '训练暂时结束，累。',
     images: ['linear-gradient(135deg, #667eea, #764ba2)'],
     likes: ['战队群·教练'],
     comments: []
@@ -292,7 +294,7 @@ const MOMENTS = [
     avatar: DEFAULT_AVATAR,
     avatarColor: '#e5e5ea',
     time: '3天前',
-    text: '您本月的信用卡账单已出，最低还款额￥1,280.00，最后还款日为每月10号，请及时还款避免逾期影响征信。',
+    text: '（广告）您本月的信用卡账单已出，最低还款额￥1,280.00，最后还款日为每月10号，请及时还款避免逾期影响征信。',
     images: [],
     likes: [],
     comments: []
@@ -325,7 +327,7 @@ const MOMENTS = [
     avatar: '拉',
     avatarColor: 'linear-gradient(135deg, #5a8dee, #3a6fd8)',
     time: '一年前',
-    text: '打职业去了，之后不再接单。',
+    text: '我打职业去了，之后不再接单。',
     images: [],
     likes: [],
     comments: []
@@ -340,10 +342,27 @@ const MOMENTS_POST_PHASE1 = '无偿领养，幼犬，应该混了一定边牧血
 const MOMENTS_POST_FULL = '无偿领养，糖糖，幼犬，应该混了一定边牧血统，总之看起来很像一只黑白色边牧，温顺粘人，可以赠送很多宠物相关用品，距离最好不要太远，可以帮忙送狗上门。';
 
 // 聊天触发点：聊到这条消息后，切回朋友圈继续输入
-const CHAT_TRIGGER_MSG = '>ᴗoಣ感觉好久好久没听到过你的声音了。';
+const CHAT_TRIGGER_MSG = '还有，不要再给我的直播账号打钱了。';
 
 // 头像更换触发点：生真发完这条消息后，头像更换为新照片
 const SHENGZHEN_AVATAR_CHANGE_MSG = '【糖糖照片】它过得很好哦，毛都变亮了';
+
+// ===== 微信剧情阶段 =====
+// 每个阶段从上一阶段结束消息的下一条开始，到 end 消息结束。
+// stage：本阶段播放完后进入的游戏阶段；returnToMoments：播放完自动回到朋友圈输入界面。
+const CHAT_PHASES = [
+  { end: '还有，不要再给我的直播账号打钱了。', stage: 'moments_phase2', returnToMoments: true },
+  { end: '那就说好了哦，过几天见。', stage: 'chat_phase2_done' },
+  { end: '◝(⑅•ᴗ•⑅)◜..°♡我会好好照顾糖糖等拉齐亚来的喔。', stage: 'chat_phase3_done' },
+  { end: '是是是，拉齐亚哥哥', stage: 'chat_phase4_done' },
+  { end: '[通话录音已自动保存至语音备忘录]', stage: 'chat_phase5_done' },
+  { end: '问题不大，你不用担心。', stage: 'chat_phase6_done' },
+  { end: '在做什么？', stage: 'chat_phase7_done' },
+  { end: '[现场录音已自动保存至语音备忘录]', stage: 'chat_phase8_done' },
+];
+
+// 朋友圈自动输入被生真消息打断的位置（已输入字符数）
+const MOMENTS_INTERRUPT_AT = 22;
 
 // ===== 设置项 =====
 const SETTINGS = [
